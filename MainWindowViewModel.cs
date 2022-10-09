@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 using System.Windows.Input;
@@ -14,7 +15,7 @@ namespace ImgSampleApplication
     class MainWindowViewModel : INotifyPropertyChanged
     {
         BitmapSource m_bitmapSource;
-        byte[] aBuf = new byte[1000 * 1000];
+        byte[] aBuf;
         public BitmapSource p_bitmapSource
         {
             get => m_bitmapSource;
@@ -34,7 +35,9 @@ namespace ImgSampleApplication
         {
             get => new RelayCommand(ImageLoad);
         }
-
+        MemoryMappedFile m_MMF;
+        MemoryMappedViewStream m_MMVS;
+        long m_Adress;
         /// <summary>
         /// 이미지 샘플링을 위한 비트맵소스 읽어오는 함수
         /// </summary>
@@ -56,22 +59,35 @@ namespace ImgSampleApplication
         /// <returns> 없음 </returns>
         private void ImageLoad()
         {
-            byte[] img = new byte[10];
+            //MMF와 MMVS 만들기
+            m_MMF = MemoryMappedFile.CreateOrOpen("Memory", 1024 * 1024 * 1024);
+            m_MMVS = m_MMF.CreateViewStream();
+
+            //MMVS에 입력할 버퍼 만들기
             OpenFileDialog dlg = new OpenFileDialog();
             dlg.Filter = "Image Files|*.bmp";
             dlg.InitialDirectory = @"D:\Images";
             if (dlg.ShowDialog() == DialogResult.OK)
             {
                 Bitmap bitmap = new Bitmap(dlg.FileName);
+                aBuf = new byte[bitmap.Width * bitmap.Height];
                 for (int y = 0; y < bitmap.Height; y++)
                 {
                     for (int x = 0; x < bitmap.Width; x++)
                     {
 
-                        aBuf[1000 * y + x] = bitmap.GetPixel(x, y).R;
+                        aBuf[bitmap.Width * y + x] = bitmap.GetPixel(x, y).R;
                     }
                 };
-                p_bitmapSource = BitmapSource.Create(bitmap.Width, bitmap.Height, 96, 96, PixelFormats.Gray8, null, aBuf, 1000);
+            }
+
+            //MMVS에 버퍼 입력하기
+            m_MMVS.Write(aBuf, 0, aBuf.Length);
+            unsafe
+            {
+                byte* p = null;
+                m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
+                m_Adress = (long)(IntPtr)p;
             }
 
         }
